@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Infraestrutura automatizada com EC2, Bootstrap e Internet Gateway'
+
+Resources:
+  MinhaVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: VPC-Estudo-IaC
+
+  # 1. Criando o "Modem" da rede
+  MeuInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: IGW-Estudo-IaC
+
+  # Conectando o Modem na VPC
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MinhaVPC
+      InternetGatewayId: !Ref MeuInternetGateway
+
+  # 2. Criando a Tabela de Rotas (o GPS)
+  MinhaTabelaDeRoteamento:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MinhaVPC
+      Tags:
+        - Key: Name
+          Value: Tabela-Rota-Publica
+
+  # Criando a rota mandando tudo (0.0.0.0/0) para o Modem
+  RotaParaInternet:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref MinhaTabelaDeRoteamento
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref MeuInternetGateway
+
+  MinhaSubnetPublica:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MinhaVPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Subnet-Publica-IaC
+
+  # 3. Associando o GPS na nossa Subnet
+  AssociacaoSubnetPublica:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref MinhaSubnetPublica
+      RouteTableId: !Ref MinhaTabelaDeRoteamento
+
+  MeuSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Permite SSH e HTTP
+      VpcId: !Ref MinhaVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  MeuServidorWeb:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet: [!Ref MeuSecurityGroup]
+          SubnetId: !Ref MinhaSubnetPublica
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          echo "<h1>Deploy Automatizado com Sucesso!</h1><p>Bem-vindo ao lab de IaC. Este servidor se auto-configurou!</p>" > /var/www/html/index.html
+      Tags:
+        - Key: Name
+          Value: Servidor-Apache-Auto
+
+Outputs:
+  EnderecoDoSite:
+    Description: IP Publico para acessar o site
+    Value: !GetAtt MeuServidorWeb.PublicIp

@@ -1,0 +1,17 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+*.tfvars
+
+# AWS CLI & CloudFormation
+.aws/
+combined_credentials
+
+# Binários e arquivos de sistema
+*.zip
+aws/
+kubectl
+minikube-linux-amd64
+stable.txt
